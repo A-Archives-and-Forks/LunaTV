@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { isImageContentType } from '@/lib/proxy-guard';
 
 export const runtime = 'nodejs';
 
@@ -39,6 +40,16 @@ export async function GET(request: Request) {
 
     const contentType = imageResponse.headers.get('content-type');
 
+    // 只转发真正的图片，避免上游返回 HTML 时在本站域名下被当作页面执行
+    // 直播台标可能位于局域网，因此这里不限制目标地址，仅限制返回类型
+    if (!isImageContentType(contentType)) {
+      imageResponse.body?.cancel();
+      return NextResponse.json(
+        { error: 'Upstream response is not an image' },
+        { status: 415 }
+      );
+    }
+
     if (!imageResponse.body) {
       return NextResponse.json(
         { error: 'Image response has no body' },
@@ -51,6 +62,7 @@ export async function GET(request: Request) {
     if (contentType) {
       headers.set('Content-Type', contentType);
     }
+    headers.set('X-Content-Type-Options', 'nosniff');
 
     // 设置缓存头
     headers.set('Cache-Control', 'public, max-age=86400, s-maxage=86400'); // 缓存一天
